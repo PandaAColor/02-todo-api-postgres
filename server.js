@@ -25,9 +25,11 @@ app.use(express.json())
 app.get('/tasks', async (req, res) => {
     try {
         const { status } = req.query
+        const pagina = req.query.pagina ?? 0
+        const limit = 5
         const result = status
-            ? await pool.query('SELECT * FROM tasks WHERE status = $1 ORDER BY id', [status])
-            : await pool.query('SELECT * FROM tasks ORDER BY id')
+            ? await pool.query('SELECT * FROM tasks WHERE status = $1 ORDER BY id LIMIT $3 OFFSET $2', [status, pagina*limit, limit])
+            : await pool.query('SELECT * FROM tasks ORDER BY id LIMIT $2 OFFSET $1', [pagina*limit,limit])
         res.json(result.rows)
     } catch (err) {
         res.status(500).json({ error: err.message })
@@ -53,10 +55,14 @@ app.get('/tasks/:id', async (req, res) => {
 // POST /tasks - Crear una nueva tarea
 app.post('/tasks', async (req, res) => {
     try {
-        const { title, description, status, dueDate } = req.body
+        const { title, description, dueDate } = req.body
+        const status = req.body.status.toLowerCase()
 
         if (!title) {
             return res.status(400).json({ error: 'Title is required' })
+        }
+        if(status != 'pending' && status != 'completed') {
+            return res.status(400).json({error: 'Solo se aceptan status de pending o completed'})
         }
 
         const result = await pool.query(
@@ -85,8 +91,31 @@ app.post('/tasks', async (req, res) => {
 //     RETURNING *
 // - Si "RETURNING *" no devuelve filas, la tarea no existia -> responder 404
 app.put('/tasks/:id', async (req, res) => {
-    // Tu codigo aca
-    res.status(501).json({ error: 'Not implemented yet' })
+    try{
+        const {id} = req.params
+        //const {title, description, status, duedate} = req.body
+        const title = req.body.title ?? null
+        const description = req.body.description ?? null
+        const status = req.body.status ?? null
+        const duedate = req.body.duedate ?? null
+        const datos_actualizados = [id, title, description, status, duedate]
+        console.log(req.body)
+        console.log(datos_actualizados)
+        const actualizacion = await pool.query(`UPDATE tasks
+        SET title = COALESCE($2, title),
+            description = COALESCE($3, description),
+            status = COALESCE($4, status),
+            due_date = COALESCE($5, due_date),
+            updated_at = NOW()
+        WHERE id = $1
+        REturning *`, datos_actualizados)
+       // const actualizacion = await pool.query(`UPDATE tasks SET title = 'HOLA' WHERE id= $1 RETURNING *`,[id, title, description, status, duedate])
+        console.log('exito')
+        res.status(200).json({mesagge:'datos actualizados'})
+    } catch(err) {
+        res.status(404).json({ error: err })        
+    }
+
 })
 
 // TODO DELETE /tasks/:id - Eliminar una tarea
@@ -95,8 +124,13 @@ app.put('/tasks/:id', async (req, res) => {
 // - Si no devuelve filas, la tarea no existia -> responder 404
 // - Si borra correctamente, responder 204 sin body
 app.delete('/tasks/:id', async (req, res) => {
-    // Tu codigo aca
-    res.status(501).json({ error: 'Not implemented yet' })
+    try{
+        const {id} = req.params
+        const eliminar = pool.query(`DELETE FROM tasks WHERE id = $1 RETURNING*`, [id])
+        res.status(204).send()
+    }catch(err) {
+        res.status(404).json({error: 'tarea inexistente'})
+    }
 })
 
 app.listen(PORT, () => {
